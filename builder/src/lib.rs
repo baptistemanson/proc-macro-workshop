@@ -16,7 +16,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let builder_id = format_ident!("{}Builder", original_id);
 
-    let param_names: Vec<proc_macro2::TokenStream> = s
+    let field_names: Vec<proc_macro2::TokenStream> = s
         .fields
         .iter()
         .map(|s| {
@@ -25,7 +25,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         })
         .collect();
 
-    let types: Vec<proc_macro2::TokenStream> = s
+    let field_types: Vec<proc_macro2::TokenStream> = s
         .fields
         .iter()
         .map(|s| {
@@ -36,21 +36,21 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         pub struct #builder_id {
-            #(#param_names: Option<#types>,)*
+            #(#field_names: Option<#field_types>,)*
         }
 
         impl #original_id {
              fn builder() -> #builder_id {
                 #builder_id {
-                    #(#param_names : None,)*
+                    #(#field_names : None,)*
                 }
             }
         }
 
 
         impl #builder_id {
-            #(pub fn #param_names(&mut self, #param_names: #types) -> &mut Self {
-                self.#param_names = Some(#param_names);
+            #(pub fn #field_names(&mut self, #field_names: #field_types) -> &mut Self {
+                self.#field_names = Some(#field_names);
                 self
             })*
         }
