@@ -1,9 +1,8 @@
 use core::panic;
 
 use proc_macro::TokenStream;
-use proc_macro2::{Ident, Span};
 
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput};
 
 #[proc_macro_derive(Builder)]
@@ -15,36 +14,45 @@ pub fn derive(input: TokenStream) -> TokenStream {
         _ => panic!("Only accept struct"),
     };
 
-    let builder_id = Ident::new(&format!("{}Builder", original_id), Span::call_site());
-    let builder_fields: Vec<proc_macro2::TokenStream> = s
+    let builder_id = format_ident!("{}Builder", original_id);
+
+    let param_names: Vec<proc_macro2::TokenStream> = s
         .fields
         .iter()
         .map(|s| {
             let name = &s.ident;
-            let ty = &s.ty;
-            quote! { #name: Option<#ty> }
+            quote! { #name }
         })
         .collect();
 
-    let default_builder_fields_values: Vec<proc_macro2::TokenStream> = s
+    let types: Vec<proc_macro2::TokenStream> = s
         .fields
         .iter()
         .map(|s| {
-            let name = &s.ident;
-            quote! { #name: None }
+            let ty = &s.ty;
+            quote! { #ty }
         })
         .collect();
 
     let expanded = quote! {
-       impl #original_id {
-         fn builder() -> #builder_id {
-            #builder_id {
-                #(#default_builder_fields_values,)*
-            }
-         }
-       }
         pub struct #builder_id {
-            #(#builder_fields,)*
+            #(#param_names: Option<#types>,)*
+        }
+
+        impl #original_id {
+             fn builder() -> #builder_id {
+                #builder_id {
+                    #(#param_names : None,)*
+                }
+            }
+        }
+
+
+        impl #builder_id {
+            #(pub fn #param_names(&mut self, #param_names: #types) -> &mut Self {
+                self.#param_names = Some(#param_names);
+                self
+            })*
         }
     };
 
