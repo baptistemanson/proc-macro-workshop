@@ -1,15 +1,15 @@
-use proc_macro::TokenStream;
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput};
 
-fn is_type_option(ty: &syn::Type) -> bool {
+fn is_option(ty: &syn::Type) -> bool {
     match ty {
         syn::Type::Path(p) => p.path.segments[0].ident == "Option",
         _ => false,
     }
 }
 
-fn get_option_inner_type(ty: &syn::Type) -> syn::Type {
+fn get_option_inner_type(ty: &syn::Type) -> &syn::Type {
     match ty {
         syn::Type::Path(p) => match &p.path.segments[0].arguments {
             syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
@@ -17,7 +17,7 @@ fn get_option_inner_type(ty: &syn::Type) -> syn::Type {
                 ..
             }) => {
                 if let syn::GenericArgument::Type(optional_type) = &args[0] {
-                    optional_type.clone()
+                    optional_type
                 } else {
                     panic!("problem finding the type inside the option")
                 }
@@ -29,7 +29,7 @@ fn get_option_inner_type(ty: &syn::Type) -> syn::Type {
 }
 
 #[proc_macro_derive(Builder)]
-pub fn derive(input: TokenStream) -> TokenStream {
+pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let original_id = input.ident;
     let s = match input.data {
@@ -38,107 +38,69 @@ pub fn derive(input: TokenStream) -> TokenStream {
     };
 
     let builder_id = format_ident!("{}Builder", original_id);
+    let mut field_name: Vec<TokenStream> = vec![];
+    let mut field_type: Vec<TokenStream> = vec![];
+    let mut field_setter_type: Vec<TokenStream> = vec![];
+    let mut field_setter_expression: Vec<TokenStream> = vec![];
+    let mut field_builder_expression: Vec<TokenStream> = vec![];
 
-    let all_fields: Vec<(bool, proc_macro2::TokenStream, &syn::Type)> = s
-        .fields
-        .iter()
-        .map(|s| {
-            let name = &s.ident;
-            let ty = &s.ty;
-            (is_type_option(&s.ty), quote! { #name }, ty)
-        })
-        .collect();
-    let (all_names, _all_types): (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) =
-        all_fields
-            .iter()
-            .map(|f| {
-                let ty = f.2;
-                (f.1.clone(), quote! { #ty })
-            })
-            .unzip();
+    s.fields.iter().for_each(|s| {
+        let name = &s.ident;
+        let ty = &s.ty;
+        let is_field_option = is_option(&s.ty);
 
-    let (mandatory_names, mandatory_types): (
-        Vec<proc_macro2::TokenStream>,
-        Vec<proc_macro2::TokenStream>,
-    ) = all_fields
-        .iter()
-        .filter_map(|f| {
-            if f.0 {
-                None
-            } else {
-                let ty = f.2;
-                Some((f.1.clone(), quote! { #ty }))
-            }
-        })
-        .unzip();
+        // struct
+        field_name.push(quote! {#name});
+        field_type.push(quote! {#ty});
 
-    let (optional_names, optional_inner_types): (
-        Vec<proc_macro2::TokenStream>,
-        Vec<proc_macro2::TokenStream>,
-    ) = all_fields
-        .iter()
-        .filter_map(|f| {
-            if !f.0 {
-                None
-            } else {
-                let ty = get_option_inner_type(&f.2);
-                Some((f.1.clone(), quote! { #ty}))
-            }
-        })
-        .unzip();
-    // identify all optional types and all non optional types
-    // will be useful for the build function
+        // set
+        let setter_type = if is_field_option {
+            &get_option_inner_type(&s.ty)
+        } else {
+            &s.ty
+        };
+        field_setter_type.push(quote! { #setter_type});
+        // @todo add vector stuff here
+        field_setter_expression.push(quote! { self.#name = ::std::option::Option::Some(#name)});
+
+        // build
+        let builder_expression = if is_field_option {
+            quote! { let #name = self.#name.clone()}
+        } else {
+            quote! { let #name = self.#name.clone().ok_or("error")?}
+        };
+        field_builder_expression.push(builder_expression);
+    });
 
     let expanded = quote! {
     #[derive(Debug)]
-    struct BuilderError {}
-
-    impl std::fmt::Display for BuilderError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "BuilderError is here!")
-        }
-    }
-    impl std::error::Error for BuilderError {
-        fn description(&self) -> &str {
-            "invalid utf-16"
-        }
-    }
-
             pub struct #builder_id {
-                #(#mandatory_names: Option<#mandatory_types>,)*
-                #(#optional_names: Option<#optional_inner_types>,)*
+                #(#field_name: ::std::option::Option<#field_setter_type>,)*
             }
 
             impl #original_id {
                  fn builder() -> #builder_id {
                     #builder_id {
-                        #(#all_names : None,)*
+                        #(#field_name : None,)*
                     }
                 }
             }
 
-
             impl #builder_id {
-                #(pub fn #mandatory_names(&mut self, #mandatory_names: #mandatory_types) -> &mut Self {
-                    self.#mandatory_names = Some(#mandatory_names);
+                #(pub fn #field_name(&mut self, #field_name: #field_setter_type) -> &mut Self {
+                    #field_setter_expression;
                     self
                 })*
 
-                #(pub fn #optional_names(&mut self, #optional_names: #optional_inner_types) -> &mut Self {
-                    self.#optional_names = Some(#optional_names);
-                    self
-                })*
-
-                pub fn build(&mut self) -> Result<#original_id, Box<dyn std::error::Error>> {
-                    #(let #mandatory_names = self.#mandatory_names.clone().ok_or(BuilderError {})?;)*
-                    #(let #optional_names = self.#optional_names.clone();)*
-                    Ok(#original_id {
-                        #(#all_names: #all_names,)*
+                pub fn build(&mut self) -> ::std::result::Result<#original_id, ::std::boxed::Box<dyn ::std::error::Error>> {
+                    #(#field_builder_expression;)*
+                    ::std::result::Result::Ok(#original_id {
+                        #(#field_name,)*
                     })
                 }
             }
         };
 
     // Hand the output tokens back to the compiler
-    TokenStream::from(expanded)
+    proc_macro::TokenStream::from(expanded)
 }
