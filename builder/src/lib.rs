@@ -2,13 +2,15 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput};
 
-fn is_option(ty: &syn::Type) -> bool {
+/// Returns true if the type is Option<T>
+fn is_option_type(ty: &syn::Type) -> bool {
     match ty {
         syn::Type::Path(p) => p.path.segments[0].ident == "Option",
         _ => false,
     }
 }
 
+/// Given Option<T>, returns T
 fn get_option_inner_type(ty: &syn::Type) -> &syn::Type {
     match ty {
         syn::Type::Path(p) => match &p.path.segments[0].arguments {
@@ -47,27 +49,29 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     s.fields.iter().for_each(|s| {
         let name = &s.ident;
         let ty = &s.ty;
-        let is_field_option = is_option(&s.ty);
+        let is_option = is_option_type(&s.ty);
 
         // struct
         field_name.push(quote! {#name});
         field_type.push(quote! {#ty});
 
-        // set
-        let setter_type = if is_field_option {
+        // setter
+        let setter_type = if is_option {
+            // Even if the field is Option<InnerType>, we still want the setter parameter to be of InnerType
+            // we have no way to reset it, but that is the specs.
             &get_option_inner_type(&s.ty)
         } else {
             &s.ty
         };
         field_setter_type.push(quote! { #setter_type});
-        // @todo add vector stuff here
         field_setter_expression.push(quote! { self.#name = ::std::option::Option::Some(#name)});
 
         // build
-        let builder_expression = if is_field_option {
+        let builder_expression = if is_option {
             quote! { let #name = self.#name.clone()}
         } else {
-            quote! { let #name = self.#name.clone().ok_or("error")?}
+            // when the field is not an option, trigger and error when None.
+            quote! { let #name = self.#name.clone().ok_or("#name is missing")?}
         };
         field_builder_expression.push(builder_expression);
     });
@@ -79,7 +83,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             }
 
             impl #original_id {
-                 fn builder() -> #builder_id {
+                fn builder() -> #builder_id {
                     #builder_id {
                         #(#field_name : None,)*
                     }
@@ -87,7 +91,8 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             }
 
             impl #builder_id {
-                #(pub fn #field_name(&mut self, #field_name: #field_setter_type) -> &mut Self {
+                #(
+                pub fn #field_name(&mut self, #field_name: #field_setter_type) -> &mut Self {
                     #field_setter_expression;
                     self
                 })*
