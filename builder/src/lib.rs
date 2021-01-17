@@ -86,12 +86,13 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 /// Returns true if the type is Option<T>
 fn is_option_type(ty: &syn::Type) -> bool {
     match ty {
-        syn::Type::Path(p) => p.path.segments[0].ident == "Option",
+        syn::Type::Path(p) => p.path.segments.len() > 0 && p.path.segments[0].ident == "Option",
         _ => false,
     }
 }
 
 /// Given Option<T>, returns T
+/// not very resilient, should only be called on known option types.
 fn get_option_inner_type(ty: &syn::Type) -> &syn::Type {
     match ty {
         syn::Type::Path(p) => match &p.path.segments[0].arguments {
@@ -99,14 +100,17 @@ fn get_option_inner_type(ty: &syn::Type) -> &syn::Type {
                 args,
                 ..
             }) => {
+                if args.len() == 0 {
+                    panic!("Invalid Option type parsing - E01")
+                }
                 if let syn::GenericArgument::Type(optional_type) = &args[0] {
                     optional_type
                 } else {
-                    panic!("problem finding the type inside the option")
+                    panic!("Invalid Option type parsing - E02")
                 }
             }
-            _ => panic!("only works on option type"),
+            _ => panic!("Invalid Option type parsing - E03"),
         },
-        _ => panic!("only works on option type"),
+        _ => panic!("Only works on Option type - E04"),
     }
 }
