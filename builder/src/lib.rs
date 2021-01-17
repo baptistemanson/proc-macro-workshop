@@ -1,7 +1,6 @@
 use core::panic;
 
 use proc_macro::TokenStream;
-
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput};
 
@@ -35,26 +34,47 @@ pub fn derive(input: TokenStream) -> TokenStream {
         .collect();
 
     let expanded = quote! {
-        pub struct #builder_id {
-            #(#field_names: Option<#field_types>,)*
-        }
+    #[derive(Debug)]
+    struct BuilderError {}
 
-        impl #original_id {
-             fn builder() -> #builder_id {
-                #builder_id {
-                    #(#field_names : None,)*
+    impl std::fmt::Display for BuilderError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "BuilderError is here!")
+        }
+    }
+    impl std::error::Error for BuilderError {
+        fn description(&self) -> &str {
+            "invalid utf-16"
+        }
+    }
+
+            pub struct #builder_id {
+                #(#field_names: Option<#field_types>,)*
+            }
+
+            impl #original_id {
+                 fn builder() -> #builder_id {
+                    #builder_id {
+                        #(#field_names : None,)*
+                    }
                 }
             }
-        }
 
 
-        impl #builder_id {
-            #(pub fn #field_names(&mut self, #field_names: #field_types) -> &mut Self {
-                self.#field_names = Some(#field_names);
-                self
-            })*
-        }
-    };
+            impl #builder_id {
+                #(pub fn #field_names(&mut self, #field_names: #field_types) -> &mut Self {
+                    self.#field_names = Some(#field_names);
+                    self
+                })*
+
+                pub fn build(&mut self) -> Result<#original_id, Box<dyn std::error::Error>> {
+                    #(let #field_names = self.#field_names.clone().ok_or(BuilderError {})?;)*
+                    Ok(#original_id {
+                        #(#field_names: #field_names.clone(),)*
+                    })
+                }
+            }
+        };
 
     // Hand the output tokens back to the compiler
     TokenStream::from(expanded)
