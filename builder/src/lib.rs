@@ -9,7 +9,7 @@ fn is_type_option(ty: &syn::Type) -> bool {
     }
 }
 
-fn get_wrapped_type_inside_option(ty: &syn::Type) -> syn::Type {
+fn get_option_inner_type(ty: &syn::Type) -> syn::Type {
     match ty {
         syn::Type::Path(p) => match &p.path.segments[0].arguments {
             syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
@@ -19,7 +19,7 @@ fn get_wrapped_type_inside_option(ty: &syn::Type) -> syn::Type {
                 if let syn::GenericArgument::Type(optional_type) = &args[0] {
                     optional_type.clone()
                 } else {
-                    panic!("problem finding a type")
+                    panic!("problem finding the type inside the option")
                 }
             }
             _ => panic!("only works on option type"),
@@ -72,7 +72,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         })
         .unzip();
 
-    let (optional_names, optional_types): (
+    let (optional_names, optional_inner_types): (
         Vec<proc_macro2::TokenStream>,
         Vec<proc_macro2::TokenStream>,
     ) = all_fields
@@ -81,7 +81,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             if !f.0 {
                 None
             } else {
-                let ty = get_wrapped_type_inside_option(&f.2);
+                let ty = get_option_inner_type(&f.2);
                 Some((f.1.clone(), quote! { #ty}))
             }
         })
@@ -106,7 +106,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
             pub struct #builder_id {
                 #(#mandatory_names: Option<#mandatory_types>,)*
-                #(#optional_names: Option<#optional_types>,)*
+                #(#optional_names: Option<#optional_inner_types>,)*
             }
 
             impl #original_id {
@@ -124,7 +124,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     self
                 })*
 
-                #(pub fn #optional_names(&mut self, #optional_names: #optional_types) -> &mut Self {
+                #(pub fn #optional_names(&mut self, #optional_names: #optional_inner_types) -> &mut Self {
                     self.#optional_names = Some(#optional_names);
                     self
                 })*
