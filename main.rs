@@ -1,82 +1,97 @@
-// Some fields may not always need to be specified. Typically these would be
-// represented as Option<T> in the struct being built.
-//
-// Have your macro identify fields in the macro input whose type is Option and
-// make the corresponding builder method optional for the caller. In the test
-// case below, current_dir is optional and not passed to one of the builders in
-// main.
-//
-// Be aware that the Rust compiler performs name resolution only after macro
-// expansion has finished completely. That means during the evaluation of a
-// procedural macro, "types" do not exist yet, only tokens. In general many
-// different token representations may end up referring to the same type: for
-// example `Option<T>` and `std::option::Option<T>` and `<Vec<Option<T>> as
-// IntoIterator>::Item` are all different names for the same type. Conversely,
-// a single token representation may end up referring to many different types in
-// different places; for example the meaning of `Error` will depend on whether
-// the surrounding scope has imported std::error::Error or std::io::Error. As a
-// consequence, it isn't possible in general for a macro to compare two token
-// representations and tell whether they refer to the same type.
-//
-// In the context of the current test case, all of this means that there isn't
-// some compiler representation of Option that our macro can compare fields
-// against to find out whether they refer to the eventual Option type after name
-// resolution. Instead all we get to look at are the tokens of how the user has
-// described the type in their code. By necessity, the macro will look for
-// fields whose type is written literally as Option<...> and will not realize
-// when the same type has been written in some different way.
-//
-// The syntax tree for types parsed from tokens is somewhat complicated because
-// there is such a large variety of type syntax in Rust, so here is the nested
-// data structure representation that your macro will want to identify:
-//
-//     Type::Path(
-//         TypePath {
-//             qself: None,
-//             path: Path {
-//                 segments: [
-//                     PathSegment {
-//                         ident: "Option",
-//                         arguments: PathArguments::AngleBracketed(
-//                             AngleBracketedGenericArguments {
-//                                 args: [
-//                                     GenericArgument::Type(
-//                                         ...
-//                                     ),
-//                                 ],
-//                             },
-//                         ),
-//                     },
-//                 ],
-//             },
-//         },
-//     )
-
-use derive_builder::Builder;
-
-#[derive(Builder)]
 pub struct Command {
     executable: String,
+    #[builder(each = "arg")]
     args: Vec<String>,
+    #[builder(each = "env")]
     env: Vec<String>,
     current_dir: Option<String>,
+}
+pub struct CommandBuilder {
+    executable: ::std::option::Option<String>,
+    args: ::std::option::Option<String>,
+    env: ::std::option::Option<String>,
+    current_dir: ::std::option::Option<String>,
+}
+#[automatically_derived]
+#[allow(unused_qualifications)]
+impl ::core::fmt::Debug for CommandBuilder {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+        match *self {
+            CommandBuilder {
+                executable: ref __self_0_0,
+                args: ref __self_0_1,
+                env: ref __self_0_2,
+                current_dir: ref __self_0_3,
+            } => {
+                let mut debug_trait_builder = f.debug_struct("CommandBuilder");
+                let _ = debug_trait_builder.field("executable", &&(*__self_0_0));
+                let _ = debug_trait_builder.field("args", &&(*__self_0_1));
+                let _ = debug_trait_builder.field("env", &&(*__self_0_2));
+                let _ = debug_trait_builder.field("current_dir", &&(*__self_0_3));
+                debug_trait_builder.finish()
+            }
+        }
+    }
+}
+impl Command {
+    pub fn builder() -> CommandBuilder {
+        CommandBuilder {
+            executable: None,
+            args: None,
+            env: None,
+            current_dir: None,
+        }
+    }
+}
+impl CommandBuilder {
+    pub fn executable(&mut self, executable: String) -> &mut Self {
+        self.executable = ::std::option::Option::Some(executable);
+        self
+    }
+    pub fn arg(&mut self, arg: String) -> &mut Self {
+        if let Some(ref mut options) = self.args {
+            options.push(arg);
+        } else {
+            self.args = ::std::option::Option::Some(<[_]>::into_vec(box [arg]));
+        }
+        self
+    }
+    pub fn env(&mut self, env: String) -> &mut Self {
+        if let Some(ref mut options) = self.env {
+            options.push(env);
+        } else {
+            self.env = ::std::option::Option::Some(<[_]>::into_vec(box [env]));
+        }
+        self
+    }
+    pub fn current_dir(&mut self, current_dir: String) -> &mut Self {
+        self.current_dir = ::std::option::Option::Some(current_dir);
+        self
+    }
+    pub fn build(
+        &mut self,
+    ) -> ::std::result::Result<Command, ::std::boxed::Box<dyn ::std::error::Error>> {
+        let executable = self
+            .executable
+            .clone()
+            .ok_or("a mandatory field is missing :")?;
+        let args = self.args.clone().ok_or("a mandatory field is missing :")?;
+        let env = self.env.clone().ok_or("a mandatory field is missing :")?;
+        let current_dir = self.current_dir.clone();
+        ::std::result::Result::Ok(Command {
+            executable,
+            args,
+            env,
+            current_dir,
+        })
+    }
 }
 
 fn main() {
     let command = Command::builder()
         .executable("cargo".to_owned())
-        .args(vec!["build".to_owned(), "--release".to_owned()])
-        .env(vec![])
+        .arg("build".to_owned())
+        .arg("--release".to_owned())
         .build()
         .unwrap();
-    assert!(command.current_dir.is_none());
-
-    let command = Command::builder()
-        .executable("cargo".to_owned())
-        .args(vec!["build".to_owned(), "--release".to_owned()])
-        .env(vec![])
-        .current_dir("..".to_owned())
-        .build()
-        .unwrap();
-    assert!(command.current_dir.is_some());
 }
